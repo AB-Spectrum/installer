@@ -38,13 +38,41 @@ need_cmd() {
 }
 
 # Check if gh CLI is available and authenticated
+# Returns: 0=authenticated, 1=not installed, 2=not authenticated
 check_gh() {
-    if command -v gh >/dev/null 2>&1; then
-        if gh auth status >/dev/null 2>&1; then
-            return 0
-        fi
+    if ! command -v gh >/dev/null 2>&1; then
+        return 1  # gh not installed
     fi
-    return 1
+
+    if ! gh auth status >/dev/null 2>&1; then
+        return 2  # gh installed but not authenticated
+    fi
+
+    return 0  # gh authenticated
+}
+
+# Check gh and provide helpful error message if needed
+check_gh_with_message() {
+    check_gh
+    local status=$?
+
+    case $status in
+        1)
+            print_warning "gh CLI not found"
+            echo "Install gh CLI for easier authentication: https://cli.github.com/"
+            echo "Or use GITHUB_TOKEN environment variable"
+            return 1
+            ;;
+        2)
+            print_warning "gh CLI not authenticated"
+            echo "Run: gh auth login"
+            echo "Or use GITHUB_TOKEN environment variable"
+            return 1
+            ;;
+        0)
+            return 0
+            ;;
+    esac
 }
 
 # Detect OS
@@ -87,7 +115,10 @@ get_latest_version() {
     print_status "Fetching latest version..."
 
     # Try gh CLI first (best for private repos)
-    if check_gh; then
+    check_gh
+    local gh_status=$?
+
+    if [ $gh_status -eq 0 ]; then
         print_status "Using gh CLI (authenticated)"
         VERSION=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null)
         if [ -n "$VERSION" ]; then
@@ -104,16 +135,35 @@ get_latest_version() {
         print_status "Using GITHUB_TOKEN for private repo access"
     fi
 
-    VERSION=$(curl "${curl_args[@]}" "$api_url" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+    VERSION=$(curl "${curl_args[@]}" "$api_url" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 2>/dev/null)
 
     if [ -z "$VERSION" ]; then
         print_error "Failed to fetch latest version"
         print_error ""
-        print_error "For private repos, authenticate with:"
-        print_error "  gh auth login"
-        print_error ""
-        print_error "Or set GITHUB_TOKEN:"
-        print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+
+        # Provide specific guidance based on gh status
+        case $gh_status in
+            1)
+                print_error "Install gh CLI (recommended):"
+                print_error "  https://cli.github.com/"
+                print_error ""
+                print_error "Or set GITHUB_TOKEN:"
+                print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+                ;;
+            2)
+                print_error "Authenticate with gh CLI (recommended):"
+                print_error "  gh auth login"
+                print_error ""
+                print_error "Or set GITHUB_TOKEN:"
+                print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+                ;;
+            *)
+                print_error "For private repos:"
+                print_error "  gh auth login"
+                print_error "  OR"
+                print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+                ;;
+        esac
         exit 1
     fi
 }
@@ -205,7 +255,10 @@ install_binary() {
     local archive_path="$tmp_dir/$archive_name"
 
     # Try gh CLI first (best for private repos)
-    if check_gh; then
+    check_gh
+    local gh_status=$?
+
+    if [ $gh_status -eq 0 ]; then
         print_status "Using gh CLI for download"
         if gh release download "$version" --repo "$REPO" --pattern "$archive_name" --dir "$tmp_dir" 2>/dev/null; then
             # Also download checksums for verification
@@ -242,10 +295,12 @@ install_binary() {
                 fi
             fi
         else
-            print_error "Failed to download using gh CLI"
-            print_error "Falling back to curl..."
-            # Fall through to curl download
+            print_warning "Failed to download using gh CLI, falling back to curl..."
         fi
+    elif [ $gh_status -eq 1 ]; then
+        print_warning "gh CLI not installed, using curl..."
+    elif [ $gh_status -eq 2 ]; then
+        print_warning "gh CLI not authenticated, using curl..."
     fi
 
     # Fall back to curl if gh failed or not available
@@ -253,11 +308,31 @@ install_binary() {
         if ! download "$download_url" "$archive_path"; then
             print_error "Failed to download: $download_url"
             print_error ""
-            print_error "For private repos, authenticate with:"
-            print_error "  gh auth login"
-            print_error ""
-            print_error "Or set GITHUB_TOKEN:"
-            print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+
+            # Provide specific guidance based on gh status
+            case $gh_status in
+                1)
+                    print_error "Install gh CLI (recommended):"
+                    print_error "  https://cli.github.com/"
+                    print_error "  gh auth login"
+                    print_error ""
+                    print_error "Or set GITHUB_TOKEN:"
+                    print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+                    ;;
+                2)
+                    print_error "Authenticate with gh CLI (recommended):"
+                    print_error "  gh auth login"
+                    print_error ""
+                    print_error "Or set GITHUB_TOKEN:"
+                    print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+                    ;;
+                *)
+                    print_error "For private repos:"
+                    print_error "  gh auth login"
+                    print_error "  OR"
+                    print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+                    ;;
+            esac
             exit 1
         fi
         # Verify checksum
