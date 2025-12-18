@@ -37,6 +37,16 @@ need_cmd() {
     fi
 }
 
+# Check if gh CLI is available and authenticated
+check_gh() {
+    if command -v gh >/dev/null 2>&1; then
+        if gh auth status >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Detect OS
 detect_os() {
     OS=$(uname -s)
@@ -76,10 +86,19 @@ detect_arch() {
 get_latest_version() {
     print_status "Fetching latest version..."
 
+    # Try gh CLI first (best for private repos)
+    if check_gh; then
+        print_status "Using gh CLI (authenticated)"
+        VERSION=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null)
+        if [ -n "$VERSION" ]; then
+            return 0
+        fi
+    fi
+
+    # Fall back to curl with token
     local api_url="https://api.github.com/repos/$REPO/releases/latest"
     local curl_args=(-sSf)
 
-    # Use GitHub token if available (for private repos)
     if [ -n "$GITHUB_TOKEN" ]; then
         curl_args+=(-H "Authorization: token $GITHUB_TOKEN")
         print_status "Using GITHUB_TOKEN for private repo access"
@@ -89,7 +108,11 @@ get_latest_version() {
 
     if [ -z "$VERSION" ]; then
         print_error "Failed to fetch latest version"
-        print_error "For private repos, set GITHUB_TOKEN environment variable"
+        print_error ""
+        print_error "For private repos, authenticate with:"
+        print_error "  gh auth login"
+        print_error ""
+        print_error "Or set GITHUB_TOKEN:"
         print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
         exit 1
     fi
@@ -181,15 +204,65 @@ install_binary() {
 
     local archive_path="$tmp_dir/$archive_name"
 
-    if ! download "$download_url" "$archive_path"; then
-        print_error "Failed to download: $download_url"
-        print_error "For private repos, set GITHUB_TOKEN:"
-        print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
-        exit 1
+    # Try gh CLI first (best for private repos)
+    if check_gh; then
+        print_status "Using gh CLI for download"
+        if gh release download "$version" --repo "$REPO" --pattern "$archive_name" --dir "$tmp_dir" 2>/dev/null; then
+            # Also download checksums for verification
+            gh release download "$version" --repo "$REPO" --pattern "checksums.txt" --dir "$tmp_dir" 2>/dev/null || true
+
+            # Verify checksum if available
+            if [ -f "$tmp_dir/checksums.txt" ]; then
+                local checksums_file="$tmp_dir/checksums.txt"
+                local filename
+                filename=$(basename "$archive_path")
+                local hash_cmd=""
+
+                if command -v shasum >/dev/null 2>&1; then
+                    hash_cmd="shasum -a 256"
+                elif command -v sha256sum >/dev/null 2>&1; then
+                    hash_cmd="sha256sum"
+                fi
+
+                if [ -n "$hash_cmd" ]; then
+                    local expected
+                    expected=$(grep "$filename" "$checksums_file" | awk '{print $1}')
+                    if [ -n "$expected" ]; then
+                        local actual
+                        actual=$($hash_cmd "$archive_path" | awk '{print $1}')
+                        if [ "$expected" = "$actual" ]; then
+                            print_status "Checksum verified ✓"
+                        else
+                            print_error "Checksum verification failed!"
+                            echo "Expected: $expected" >&2
+                            echo "Actual: $actual" >&2
+                            exit 1
+                        fi
+                    fi
+                fi
+            fi
+        else
+            print_error "Failed to download using gh CLI"
+            print_error "Falling back to curl..."
+            # Fall through to curl download
+        fi
     fi
 
-    # Verify checksum
-    verify_checksum "$archive_path" "$checksums_url"
+    # Fall back to curl if gh failed or not available
+    if [ ! -f "$archive_path" ]; then
+        if ! download "$download_url" "$archive_path"; then
+            print_error "Failed to download: $download_url"
+            print_error ""
+            print_error "For private repos, authenticate with:"
+            print_error "  gh auth login"
+            print_error ""
+            print_error "Or set GITHUB_TOKEN:"
+            print_error "  export GITHUB_TOKEN=ghp_xxxxxxxxxxxx"
+            exit 1
+        fi
+        # Verify checksum
+        verify_checksum "$archive_path" "$checksums_url"
+    fi
 
     # Extract archive
     print_status "Extracting archive..."

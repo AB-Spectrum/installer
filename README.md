@@ -6,24 +6,35 @@ Single-command installers for AB-Spectrum tools.
 
 ### Quick Install
 
+**Recommended:** Authenticate with GitHub CLI first (for private repos):
+
+```bash
+gh auth login
+curl -sSL https://raw.githubusercontent.com/AB-Spectrum/installer/main/tobycli.sh | bash
+```
+
+**Alternative:** Use without gh CLI (requires token for private repos):
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/AB-Spectrum/installer/main/tobycli.sh | bash
 ```
 
 ### Private Repository Access
 
-For private repositories, set your GitHub token before running the installer:
+The installer automatically uses `gh` CLI if authenticated (recommended):
+
+```bash
+gh auth login
+```
+
+**Alternative:** Use GitHub token if `gh` CLI is not available:
 
 ```bash
 export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 curl -sSL https://raw.githubusercontent.com/AB-Spectrum/installer/main/tobycli.sh | bash
 ```
 
-To create a token:
-1. Go to https://github.com/settings/tokens
-2. Generate new token (classic)
-3. Select `repo` scope for private repository access
-4. Copy the token and export it as shown above
+To create a token: https://github.com/settings/tokens (requires `repo` scope)
 
 ### Custom Installation
 
