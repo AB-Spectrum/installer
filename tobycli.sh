@@ -44,8 +44,21 @@ check_gh() {
         return 1  # gh not installed
     fi
 
-    if ! gh auth status >/dev/null 2>&1; then
-        return 2  # gh installed but not authenticated
+    # Use timeout to prevent hanging on auth check (10 second timeout)
+    if command -v timeout >/dev/null 2>&1; then
+        if ! timeout 10 gh auth status >/dev/null 2>&1; then
+            return 2  # gh installed but not authenticated or timeout
+        fi
+    elif command -v gtimeout >/dev/null 2>&1; then
+        # macOS with coreutils
+        if ! gtimeout 10 gh auth status >/dev/null 2>&1; then
+            return 2
+        fi
+    else
+        # No timeout command, try without timeout (risky)
+        if ! gh auth status >/dev/null 2>&1; then
+            return 2
+        fi
     fi
 
     return 0  # gh authenticated
@@ -120,7 +133,14 @@ get_latest_version() {
 
     if [ $gh_status -eq 0 ]; then
         print_status "Using gh CLI (authenticated)"
-        VERSION=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || true)
+        # Use timeout if available to prevent hanging
+        if command -v timeout >/dev/null 2>&1; then
+            VERSION=$(timeout 30 gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || true)
+        elif command -v gtimeout >/dev/null 2>&1; then
+            VERSION=$(gtimeout 30 gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || true)
+        else
+            VERSION=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || true)
+        fi
         if [ -n "$VERSION" ]; then
             return 0
         fi
@@ -128,7 +148,7 @@ get_latest_version() {
 
     # Fall back to curl with token
     local api_url="https://api.github.com/repos/$REPO/releases/latest"
-    local curl_args=(-sSf)
+    local curl_args=(-sSf --connect-timeout 10 --max-time 30)
 
     if [ -n "$GITHUB_TOKEN" ]; then
         curl_args+=(-H "Authorization: token $GITHUB_TOKEN")
@@ -172,7 +192,7 @@ get_latest_version() {
 download() {
     local url="$1"
     local output="$2"
-    local curl_args=(--proto '=https' --tlsv1.2 -sSfL -o "$output")
+    local curl_args=(--proto '=https' --tlsv1.2 -sSfL -o "$output" --connect-timeout 10 --max-time 300)
 
     if [ -n "$GITHUB_TOKEN" ]; then
         curl_args+=(-H "Authorization: token $GITHUB_TOKEN")
