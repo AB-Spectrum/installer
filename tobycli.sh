@@ -18,15 +18,15 @@ VERSION="${TOBY_VERSION:-latest}"
 
 # Print functions
 print_status() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    printf "${GREEN}[INFO]${NC} %s\n" "$1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    printf "${YELLOW}[WARN]${NC} %s\n" "$1"
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
+    printf "${RED}[ERROR]${NC} %s\n" "$1" >&2
 }
 
 # Check if command exists
@@ -421,7 +421,7 @@ update_path() {
 
 # Main installation function (wrapped to prevent incomplete execution)
 main() {
-    echo -e "${GREEN}TobyCLI Installer${NC}"
+    printf "${GREEN}TobyCLI Installer${NC}\n"
     echo "=================="
     echo ""
 
@@ -460,9 +460,9 @@ main() {
     update_path
 
     echo ""
-    echo -e "${GREEN}Installation complete! ✓${NC}"
+    printf "${GREEN}Installation complete! ✓${NC}\n"
     echo ""
-    echo -e "${YELLOW}Get started:${NC}"
+    printf "${YELLOW}Get started:${NC}\n"
     echo "  $BINARY_NAME --help"
     echo "  $BINARY_NAME init"
     echo "  $BINARY_NAME auth login"
@@ -470,10 +470,10 @@ main() {
 
     # Show version
     if command -v "$BINARY_NAME" >/dev/null 2>&1; then
-        echo -e "${YELLOW}Installed version:${NC}"
+        printf "${YELLOW}Installed version:${NC}\n"
         "$BINARY_NAME" --version 2>/dev/null || echo "  $VERSION"
     else
-        echo -e "${YELLOW}Installed version:${NC} $VERSION"
+        printf "${YELLOW}Installed version:${NC} %s\n" "$VERSION"
         echo ""
         print_warning "Reload your shell to use '$BINARY_NAME' command"
     fi
