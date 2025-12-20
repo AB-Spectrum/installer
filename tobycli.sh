@@ -120,7 +120,7 @@ get_latest_version() {
 
     if [ $gh_status -eq 0 ]; then
         print_status "Using gh CLI (authenticated)"
-        VERSION=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null)
+        VERSION=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || true)
         if [ -n "$VERSION" ]; then
             return 0
         fi
@@ -135,7 +135,7 @@ get_latest_version() {
         print_status "Using GITHUB_TOKEN for private repo access"
     fi
 
-    VERSION=$(curl "${curl_args[@]}" "$api_url" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 2>/dev/null)
+    VERSION=$(curl "${curl_args[@]}" "$api_url" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 2>/dev/null || true)
 
     if [ -z "$VERSION" ]; then
         print_error "Failed to fetch latest version"
